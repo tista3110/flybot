@@ -1,0 +1,561 @@
+chatgpt = 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
+
+import re
+import pickle
+import faiss
+import numpy as np
+from sentence_transformers import SentenceTransformer
+from openai import OpenAI
+
+# ---------- configuration ----------
+OPENAI_API_KEY = "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"  # Replace with your GPT-4 API key
+INDEX_PATH     = "faiss_index_bge.idx"
+META_PATH      = "qa_metadata_bge.pkl"
+EMBED_MODEL    = "BAAI/bge-base-en-v1.5"
+TOP_K          = 8
+SIM_THRESHOLD  = 0.55
+# ------------------------------------
+
+# Initialize OpenAI client
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+# Load embedder and FAISS index
+embedder = SentenceTransformer(EMBED_MODEL)
+index = faiss.read_index(INDEX_PATH)
+
+# Load QA metadata
+with open(META_PATH, "rb") as f:
+    qa_data = pickle.load(f)
+
+# Regex for normalization
+_punct = re.compile(r"[^\w\s]")
+
+def _normalize(text: str) -> str:
+    return _punct.sub("", text.lower()).strip()
+
+def _semantic_search(query: str):
+    nq = _normalize(query)
+    emb = embedder.encode([nq], normalize_embeddings=True).astype("float32")
+    scores, idx = index.search(emb, TOP_K)
+    pairs = []
+
+    for score, i in zip(scores[0], idx[0]):
+        if score >= SIM_THRESHOLD:
+            pairs.append({
+                "question": qa_data[i]["question"],
+                "answer": qa_data[i]["answer"],
+                "score": float(score)
+            })
+
+    # fallback keyword search if no semantic hits
+    if not pairs:
+        matches = [qa for qa in qa_data if all(word in qa["question"].lower() for word in nq.split())]
+        for m in matches[:TOP_K]:
+            pairs.append({"question": m["question"], "answer": m["answer"], "score": 0.0})
+
+    return pairs
+
+def get_chat_response(user_query: str):
+    casual = {
+        "hi": "Hello! How can I assist you today?",
+        "hey": "Hello! How can I assist you today?",
+        "hello": "Hi there! How can I help you?",
+        "thanks": "You're welcome!",
+        "thank you": "Glad to help!",
+        "ok": "👍", "okay": "👍",
+        "bye": "Goodbye! Take care!",
+    }
+    key = user_query.strip().lower()
+    if key in casual:
+        return casual[key]
+
+    context_items = _semantic_search(user_query)
+
+    if not context_items:
+        return "I'm Sorry, I couldn’t find an answer. Please try rephrasing your question."
+
+    # Deduplicate answers
+    seen, unique_ctx = set(), []
+    for c in context_items:
+        if c["answer"] not in seen:
+            unique_ctx.append(c)
+            seen.add(c["answer"])
+
+    context_facts = "\n".join([f"- {c['answer']}" for c in unique_ctx])
+
+    system_prompt = (
+        "You are a helpful and knowledgeable AI Pathology Assistant. "
+        "Use only the facts provided to answer the user's question. "
+        "If none of the information is relevant, say exactly: "
+        "\"I'm Sorry, I couldn't find an answer. Please try rephrasing your question.\""
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"Facts:\n{context_facts}\n\nUser Question:\n{user_query}"}
+    ]
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=messages,
+            temperature=0.3,
+        )
+        answer = response.choices[0].message.content.strip()
+        if "couldn’t find" in answer.lower() or answer == "":
+            return "I'm Sorry, I couldn’t find an answer. Please try rephrasing your question."
+        return answer
+    except Exception as e:
+        print("OpenAI API error:", e)
+        return "⚠️ Failed to get AI response."
+
+
+# Example usage
+if __name__ == "__main__":
+    while True:
+        user_input = input("You: ")
+        if user_input.lower() in ["exit", "quit", "bye"]:
+            print("Bot: Goodbye! Take care!")
+            break
+        response = get_chat_response(user_input)
+        print("Bot:", response)
+
+
+
+
+
+
+
+
+
+
+
+
+
+python -m venv venv
+source venv/Scripts/activate
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+uvicorn app:app --reload
+
+current api = AIzaSyAGV0V-TxzhLSct59Q_9KjZqbp-ADvpcXI
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Pathology ChatBot</title>
+    <style>
+        :root {
+            --primary-gradient: linear-gradient(135deg, #5b42f3 0%, #ff58b7 100%);
+            --light-bg: #f0f4f8;
+            --text-light: #ffffff;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: var(--light-bg);
+        }
+
+        .chat-container {
+            width: 350px;
+            height: 600px;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            background: var(--primary-gradient);
+            color: var(--text-light);
+            padding: 15px;
+            text-align: center;
+        }
+
+        .chat-messages {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 15px;
+        }
+
+        .message {
+            margin-bottom: 10px;
+            max-width: 80%;
+            clear: both;
+        }
+
+        .message.user {
+            float: right;
+            background-color: #5b42f3;
+            color: white;
+            border-radius: 15px 15px 0 15px;
+            padding: 10px;
+        }
+
+        .message.assistant {
+            float: left;
+            background-color: #f0f0f0;
+            border-radius: 15px 15px 15px 0;
+            padding: 10px;
+        }
+
+        .chat-input {
+            display: flex;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-top: 1px solid #e9ecef;
+        }
+
+        .chat-input input {
+            flex-grow: 1;
+            border: none;
+            padding: 10px;
+            border-radius: 20px;
+            margin-right: 10px;
+        }
+
+        .chat-input button {
+            background: var(--primary-gradient);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <h2>Pathology ChatBot</h2>
+        </div>
+        <div class="chat-messages" id="chatMessages"></div>
+        <div class="chat-input">
+            <input type="text" id="messageInput" placeholder="Type your question...">
+            <button onclick="sendMessage()">➤</button>
+        </div>
+    </div>
+
+    <script>
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const messagesContainer = document.getElementById('chatMessages');
+            const message = input.value.trim();
+            if (message === '') return;
+
+            const userMessage = document.createElement('div');
+            userMessage.classList.add('message', 'user');
+            userMessage.textContent = message;
+            messagesContainer.appendChild(userMessage);
+            input.value = '';
+
+            try {
+                const response = await fetch('/ask', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: message })
+                });
+                const data = await response.json();
+                const botMessage = document.createElement('div');
+                botMessage.classList.add('message', 'assistant');
+                botMessage.textContent = data.ai_answer;
+                messagesContainer.appendChild(botMessage);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            } catch (error) {
+                const errorMessage = document.createElement('div');
+                errorMessage.classList.add('message', 'assistant');
+                errorMessage.textContent = 'Something went wrong. Please try again.';
+                messagesContainer.appendChild(errorMessage);
+            }
+        }
+
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
+
+
+
+error(as takes too long to load)
+
+INFO:     127.0.0.1:60153 - "POST /ask HTTP/1.1" 200 OK
+Batches: 100%|████████████████████████████████████████████████████████| 1/1 [00:00<00:00, 38.92it/s]
+INFO:     127.0.0.1:60156 - "POST /ask HTTP/1.1" 200 OK
+Batches: 100%|████████████████████████████████████████████████████████| 1/1 [00:00<00:00, 40.80it/s]
+INFO:     127.0.0.1:60164 - "POST /ask HTTP/1.1" 200 OK
+Batches: 100%|████████████████████████████████████████████████████████| 1/1 [00:00<00:00, 24.50it/s]
+Google Gemini API error: Timeout of 600.0s exceeded, last exception: 503 The model is overloaded. Please try again later.
+INFO:     127.0.0.1:60207 - "POST /ask HTTP/1.1" 200 OK
+INFO:     Shutting down
+Batches: 100%|████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  2.22it/s]
+Google Gemini API error: 429 You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. [violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_requests"
+  quota_id: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.0-flash"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+  quota_value: 15
+}
+, links {
+  description: "Learn more about Gemini API quotas"
+  url: "https://ai.google.dev/gemini-api/docs/rate-limits"
+}
+, retry_delay {
+  seconds: 52
+}
+]
+INFO:     127.0.0.1:60306 - "POST /ask HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60276 - "GET / HTTP/1.1" 200 OK
+Batches: 100%|████████████████████████████████████████████████████████| 1/1 [00:00<00:00, 38.50it/s] 
+Google Gemini API error: 429 You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. [violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_requests"
+  quota_id: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.0-flash"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+  quota_value: 15
+}
+, links {
+  description: "Learn more about Gemini API quotas"
+  url: "https://ai.google.dev/gemini-api/docs/rate-limits"
+}
+, retry_delay {
+  seconds: 52
+}
+]
+INFO:     127.0.0.1:60223 - "POST /ask HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60294 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
+INFO:     Waiting for connections to close. (CTRL+C to force quit)
+INFO:     127.0.0.1:60294 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [25816]
+INFO:     Stopping reloader process [24440]
+(venv) PS C:\Users\Jayakrishna\Downloads\pathologybot> 
+
+
+ChatGPT said:
+Thanks! Your log clearly shows what's going wrong:
+
+❌ Problem Summary
+You're hitting Google Gemini API quota and overload limits:
+
+⚠️ Errors in Your Logs:
+Timeout error:
+
+vbnet
+Copy
+Edit
+Google Gemini API error: Timeout of 600.0s exceeded
+503 The model is overloaded.
+Quota Exceeded (429):
+
+sql
+Copy
+Edit
+429 You exceeded your current quota
+quota_value: 15 (requests/minute for free tier)
+✅ What This Means
+You're allowed only 15 requests per minute per model (like gemini-2.0-flash) on the free tier.
+
+Gemini is also overloaded, which causes delays or no responses.
+
+Your chatbot looks “stuck” or reloads because:
+
+Gemini is slow to respond, and
+
+You didn’t add proper error/timeout handling.
+
+🛠️ How to Fix This
+✅ 1. Add Timeout + Graceful Error Handling
+Update your get_chat_response() to catch and show user-friendly errors:
+
+python
+Copy
+Edit
+def get_chat_response(query, context=None):
+    try:
+        response = client.chat(messages=[...], timeout=15)  # adjust this based on your SDK
+        return response.text
+    except Exception as e:
+        print("❌ Gemini API Error:", e)
+        return "⚠️ Sorry, the AI is busy or quota is exceeded. Please try again in a minute."
+✅ 2. Limit Frontend Requests (Debounce)
+Add a delay or disable the input until you get a reply:
+
+javascript
+Copy
+Edit
+let isWaiting = false;
+
+async function sendMessage() {
+    if (isWaiting) return;
+    isWaiting = true;
+
+    // existing code...
+
+    await fetch(...)
+
+    isWaiting = false;
+}
+✅ 3. Optional: Use OpenRouter (fallback proxy for Gemini)
+If you use OpenRouter + Gemini, you may get:
+
+Smoother quota handling
+
+Additional models (Claude, GPT, Mixtral)
+
+API setup: https://openrouter.ai/docs
+
+✅ 4. Upgrade Plan (if needed)
+If you're using the official Google Gemini API, go to:
+
+🔗 Gemini API Quotas
+
+To upgrade or monitor usage.
+
+✅ TL;DR Solution
+Add error handling now to prevent your chatbot from freezing:
+
+python
+Copy
+Edit
+except Exception as e:
+    print("❌ Gemini API error:", e)
+    return "⚠️ The AI is currently busy or your usage limit has been reached. Please try again in a minute."
+Would you like me to rewrite your entire get_chat_response() to be quota-aware and resilient?
+
+----------utilss
+
+import google.generativeai as genai
+
+# Configure your Gemini API key once globally
+genai.configure(api_key="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")
+
+def get_chat_response(user_query, context_list):
+    # Prepare context examples as prompt
+    examples = "\n".join([f"Q: {c['question']}\nA: {c['answer']}" for c in context_list])
+    prompt = f"""
+You are an AI Pathology Assistant.
+
+Use the examples below to answer the user's question. Only answer using the information from the context — do not guess.
+
+Context:
+{examples}
+
+User question:
+{user_query}
+
+Answer:"""
+
+    try:
+        # Initialize the Gemini model (gemini-pro or gemini-2.0)
+        model = genai.GenerativeModel("gemini-2.0-flash")
+
+        # Generate content based on prompt
+        response = model.generate_content(prompt)
+        
+        return response.text.strip()
+    except Exception as e:
+        print("Google Gemini API error:", e)
+        return "⚠️ Failed to get AI response."
+
+2.
+
+
+prompt = f"""
+You are an AI Pathology Assistant.
+
+Use the examples below to answer the user's question. Only answer using the information from the context — do not guess.
+
+Context:
+{examples}
+
+User question:
+{user_query}
+
+Answer:"""
+
+
+
+
+before version of current javascript
+
+<script>
+    
+
+    function toggleChat() {
+      const chatWindow = document.getElementById("chatWindow");
+      chatWindow.style.display = chatWindow.style.display === "flex" ? "none" : "flex";
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById('messageInput');
+      const messagesContainer = document.getElementById('chatMessages');
+      const message = input.value.trim();
+      if (message === '') return;
+
+      const userMessage = document.createElement('div');
+      userMessage.classList.add('message', 'user');
+      userMessage.textContent = message;
+      messagesContainer.appendChild(userMessage);
+      input.value = '';
+
+      try {
+        const response = await fetch('/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: message })
+        });
+        const data = await response.json();
+        const botMessage = document.createElement('div');
+        botMessage.classList.add('message', 'assistant');
+        botMessage.textContent = data.ai_answer;
+        messagesContainer.appendChild(botMessage);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      } catch (error) {
+        const errorMessage = document.createElement('div');
+        errorMessage.classList.add('message', 'assistant');
+        errorMessage.textContent = 'Something went wrong. Please try again.';
+        messagesContainer.appendChild(errorMessage);
+      }
+    }
+
+    
+
+    document.getElementById('messageInput').addEventListener('keypress', function (e) {
+      if (e.key === 'Enter') {
+        sendMessage();
+      }
+    });
+  </script>
+
+
